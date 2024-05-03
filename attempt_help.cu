@@ -10,16 +10,23 @@ using namespace std;
 #define gridSize 1
 #define blockSize 96
 
-string toBinary(int n){
-    string r;
+
+__host__ __device__ int* toBinary(int n){
+    int count;
+    int r[35];
+
     while(n != 0){
-        r=(n%2==0 ?"0":"1")+r;
+        r[count+2] = (n%2==0 ?0:1)+r[count+2];
         n/=2;
+        count ++;
     }
-    return r;
+    r[34] = count;
+    int* x =  r;
+    return x;
 }
 
-double log2v2(int n){
+
+__host__ __device__ double log2v2(int n){
     int count = 0;
     while (n >>= 1) count ++;
     return count;
@@ -69,152 +76,192 @@ void save_image_array(uint8_t* image_array){
    fclose(imageFile);
 }
 
-__global__ void felics(uint8_t *image_array, string *output_array){
-   /*
-   ontvangt rij van pixels
-   selecteert telkens 3 pixls om naar flipfloep te sturen
-   ontvangt van flipfloep terug gecodeerde pixel om in output array te steken
-   */
-   int tid = blockIdx.x * blockDim.x + threadIdx.x;
-   int stride = blockDim.x*gridDim.x;
 
-   output_array[0] = image_array[0];
-   output_array[1] = image_array[1];
+__host__ __device__ int ABC(int *delta, int* P){
 
-   string coded_pixel[width];
+    int range = *delta + 1;
+    int upper_bound = int(ceil(log2(double(*delta))));
+    // int upper_bound = log2v2(*delta);
+    int threshold = pow(2,upper_bound) - range;
+    int shift = range - threshold/2;
+    int result;
 
-   for(int i = tid + 2*stride; i < height; i+= stride){
-       flipfloep(image_array[i-2*stride], image_array[i-stride], image_array[i], coded_pixel[i]);
-       output_array[i] = coded_pixel[i];
-
-   }
+    if(*P < shift){
+        result = (*P + threshold)*2 + 1;
+    }
+    else if(P > delta - shift){
+        result = (*delta - *P + threshold)*2;
+    }
+    else{
+        result = *P - shift;
+    }
+    return result;
 }
 
-__global__ void flipfloep (uint8_t N1, uint8_t N2, uint8_t P, string pixel){
+__host__ __device__ int SEC(int* P){
+    int result;
+    int b =0;
+    int u =0;
+    int k = 12;
+    int bitlen = ceil(log2(*P+1)) - 1;
+    if(bitlen < k){
+        b = k;
+        u = 0;
+    }
+    else{
+        b = bitlen;
+        u = b - k + 1;
+    }
 
-   for(int i= 2; i < width; i++){
-       //bepalen welke hoogste is (N1 of N2) voor door te sturen naar ABC
-       //-> hier delta al berekenen, maar 1 getal meegeven ipv 2
-       int H, L;
-       if( N1 > N2){
+    // const int const_u = u;
+    // int result_arr[] = ; 
+    // int result_arr[const_u+b+1];
+    int* result_arr = (int*) malloc((u+b+1)*sizeof(int));
+        for (int i = 0; i < u+b+1; i++)
+        {
+            result_arr[i] = 5;
+        }
+    
+    for(int i = 0; i < u; i++){
+        result_arr[i] = 1;
+    }
+    result_arr[u] = 0;
+
+        // for (int i = 0; i < u+b+1; i++)
+        // {
+        //     std::cout<<result_arr[i];
+        // }
+    int sum;
+    std::bitset<32> A=*P;
+    for (int i=u+1,j=b-1; i < u+b+1; i++, j--)
+    {
+            result_arr[i]=A[j];
+    }
+    for(int i =0,j=u+b; i<u+b+1; i++,j--){
+        sum = sum + result_arr[j]*pow(2,i);
+    }
+    free(result_arr);
+    result = sum;
+    return result;
+}
+
+
+
+
+__host__ __device__ int* flipfloep (uint8_t N1, uint8_t N2, uint8_t P){
+    //bepalen welke hoogste is (N1 of N2) voor door te sturen naar ABC
+    //-> hier delta al berekenen, maar 1 getal meegeven ipv 2
+    int H, L;
+    if( N1 > N2){
             H = N1;
             L = N2;
-       }
-       else{
-           H = N2;
-           L = N1;
-       }
-       int delta; 
-       delta = int(H - L);
-       if( delta < 255){
-           delta = 255;
-       }
-       int result;
-       string res_str;
-       if(P < H && P > L){
+    }
+    else{
+        H = N2;
+        L = N1;
+    }
+    int delta; 
+    delta = int(H - L);
+    if( delta < 255){
+        delta = 255;
+    }
+    int result;
+    int res_str[35];
+    //array maken van 33 -> int is max 32 groot, 33ste getal wordt gebruikt om bitlengte in te steken -> zo bij uitlezen weet men welke van de eerste X bits men moet uitlezen
+    //1ste 2 bits van de array overlaten om dat dit dan de prefix wordt 0->00 voor de makkelijkheid
+    if(P < H && P > L){
             int x = P-L;
-            ABC(&delta, &x, &result);
-            res_str = toBinary(result);
+            result = ABC(&delta, &x);
+            *res_str = *toBinary(result);
             //res_str = bitset<8>(result);
-            res_str = "0"+res_str;
-           
-       }
-       else if(P < L ){
+            res_str[0] = 0;
+            res_str[1] = 0;
+        
+    }
+    else if(P < L ){
             int x = L-P;
-            SEC(&x, &result);
-            res_str = toBinary(result);
+            result = SEC(&x);
+            *res_str = *toBinary(result);
             //res_str = bitset<8>(result);
-            res_str = "10"+res_str;
-       }
-       else {
+            res_str[0] = 1;
+            res_str[1] = 0;
+    }
+    else {
             int x = P-H;
-            SEC(&x, &result);
-            res_str = toBinary(result);
+            result = SEC(&x);
+            *res_str = *toBinary(result);
             //res_str = bitset<8>(result);
-            res_str = "11"+res_str;
-       }
-       pixel = res_str;
-       
-   }
+            res_str[0] = 1;
+            res_str[1] = 1;
+    }
+    int *x =res_str;
+    return x;
 }
 
-__global__ void ABC(int *delta, int* P, int *result){
 
-   int range = *delta + 1;
-   int upper_bound = int(ceil(log2(double(int(delta)))));
-   int threshold = pow(2,upper_bound) - range;
-   int shift = range - threshold/2;
+// __global__ void felics(uint8_t *image_array, string *output_array){
+__global__ void felics(uint8_t *image_array, int *output_array){
+    // void felics(uint8_t *image_array, string *output_array){
+    /*
+    ontvangt rij van pixels
+    selecteert telkens 3 pixels om naar flipfloep te sturen
+    ontvangt van flipfloep terug gecodeerde pixel om in output array te steken
+    */
+    int tid = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x*gridDim.x;
+
+    // output_array[0] = image_array[0];
+    // output_array[1] = image_array[1];
 
 
-   if(*P < shift){
-       *result = (*P + threshold)*2 + 1;
-   }
-   else if(P > delta - shift){
-       *result = (*delta - *P + threshold)*2;
-   }
-   else{
-       *result = *P - shift;
-   }
+    for(int i = tid; i < width*height; i+= stride){
+        if (i%width == 0 || i%width == 1){
+            output_array[i] = image_array[i];
+        }
+        else{
+             output_array[i] =  *flipfloep(image_array[i-2*stride], image_array[i-stride], image_array[i]);
+    
+        }
+        
+    }
 }
 
-__global__ void SEC(int* P, int *result){
-   int b,u =0;
-   int k = 12;
-   int bitlen = ceil(log2(*P+1)) - 1;
-   if(bitlen < k){
-       b = k;
-       u = 0;
-   }
-   else{
-       b = bitlen;
-       u = b - k + 1;
-   }
-   int result_arr[u+b+1];
-       for (int i = 0; i < u+b+1; i++)
-       {
-           result_arr[i] = 5;
-       }
-   
-   for(int i = 0; i < u; i++){
-       result_arr[i] = 1;
-   }
-   result_arr[u] = 0;
-
-       for (int i = 0; i < u+b+1; i++)
-       {
-           std::cout<<result_arr[i];
-       }
-       std::cout << std::endl;
-   int sum;
-   std::bitset<32> A=*P;
-   for (int i=u+1,j=b-1; i < u+b+1; i++, j--)
-   {
-           result_arr[i]=A[j];
-   }
-   for(int i =0,j=u+b; i<u+b+1; i++,j--){
-       sum = sum + result_arr[j]*pow(2,i);
-   }
-   *result = sum;
-}
 
 
 
 
 int main (void){
-   uint8_t* image_array = get_image_array();
+    uint8_t* image_array = get_image_array();
 
-   string* output_array = (string*)malloc(width*height*sizeof(string));
+    int* output_array = (int*)malloc(width*height*(sizeof(int)+3));
 
-   uint8_t *d_image_array;
-   cudaMalloc(&d_image_array,width*height*sizeof(uint8_t));
-   cudaMemcpy(d_image_array,image_array,width*height*sizeof(uint8_t),cudaMemcpyHostToDevice);
+    uint8_t *d_image_array;
+    cudaMalloc(&d_image_array,width*height*sizeof(uint8_t));
+    cudaMemcpy(d_image_array,image_array,width*height*sizeof(uint8_t),cudaMemcpyHostToDevice);
 
-   string *d_output_array;
-   cudaMalloc(&d_output_array,width*height*sizeof(string));
+    int *d_output_array;
+    cudaMalloc(&d_output_array,width*height*(sizeof(int)+3));
 
-   const auto start = std::chrono::high_resolution_clock::now();
-   felics<<<gridSize,blockSize>>>(d_image_array,d_output_array);
-   cudaMemcpy(output_array,d_output_array,width*height*sizeof(string),cudaMemcpyDeviceToHost);
+    const auto start = std::chrono::high_resolution_clock::now();
+    felics<<<gridSize,blockSize>>>(d_image_array,d_output_array);
+    cudaMemcpy(output_array,d_output_array,width*height*(sizeof(int)+3),cudaMemcpyDeviceToHost);
+    
+    string s;
+    for (int i = 0; i < width*height; i++){
+        if (i%width ==0 || i%width ==1){
+            std::cout << "onveranderde pixel" << output_array[i] << std::endl;
+        }
+        else{
+            s = "";
+            for (int i = 0; i < output_array[34]; i++){
+                s+= to_string(output_array[i]);
+            }
+        std::cout << s << std::endl;
+            
+        }
+        
+    }
+   
    cudaFree(d_image_array);
    cudaFree(d_output_array);
    const auto end = std::chrono::high_resolution_clock::now();
