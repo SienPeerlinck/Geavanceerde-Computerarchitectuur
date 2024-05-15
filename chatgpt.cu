@@ -163,7 +163,7 @@ __global__ void felics(uint8_t* image_array, int* output_array) {
             // // for (int j = 0; j < 35; j++) {
             // output_array[i] = *res_str[1]; //res[j]; // Store the 35-bit result
             // // }
-            output_array[i] = {5};
+            output_array[i] = 5;
         }
     }
 
