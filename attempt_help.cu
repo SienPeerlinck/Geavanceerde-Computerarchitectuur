@@ -35,7 +35,7 @@ __host__ __device__ double log2v2(int n){
 
 uint8_t* get_image_array(void){
    FILE *imageFile;
-   imageFile=fopen("./input_image.ppm","rb");
+   imageFile=fopen("./1x2a-night-000.png","rb");
    if(imageFile==NULL){
        perror("ERROR: Cannot open output file");
        exit(EXIT_FAILURE);
@@ -58,7 +58,7 @@ uint8_t* get_image_array(void){
 void save_image_array(uint8_t* image_array){
 
    FILE *imageFile;
-   imageFile=fopen("./output_image.ppm","wb");
+   imageFile=fopen("./compressed_img.csv","wb");
    if(imageFile==NULL){
        perror("ERROR: Cannot open output file");
        exit(EXIT_FAILURE);
@@ -222,7 +222,6 @@ __global__ void felics(uint8_t *image_array, int *output_array){
              output_array[i] =  *flipfloep(image_array[i-2*stride], image_array[i-stride], image_array[i]);
     
         }
-        
     }
 }
 
@@ -234,6 +233,8 @@ int main (void){
     uint8_t* image_array = get_image_array();
 
     int* output_array = (int*)malloc(width*height*(sizeof(int)+3));
+
+
 
     uint8_t *d_image_array;
     cudaMalloc(&d_image_array,width*height*sizeof(uint8_t));
@@ -249,13 +250,15 @@ int main (void){
     string s;
     for (int i = 0; i < width*height; i++){
         if (i%width ==0 || i%width ==1){
-            std::cout << "onveranderde pixel" << output_array[i] << std::endl;
+            std::cout << "onveranderde pixel " << output_array[i] << i << std::endl;
+            
         }
         else{
             s = "";
-            for (int i = 0; i < output_array[34]; i++){
-                s+= to_string(output_array[i]);
+            for (int j = 0; j < output_array[i+32]; j++){
+                s = s + to_string(output_array[i+j]);
             }
+            i += 30;
         std::cout << s << std::endl;
             
         }
