@@ -11,19 +11,32 @@ using namespace std;
 #define blockSize 96
 
 
-__host__ __device__ int* toBinary(int n){
-    int count;
-    int r[35];
+// __host__ __device__ int* toBinary(int n){
+//     int count;
+//     int r[35];
 
-    while(n != 0){
-        r[count+2] = (n%2==0 ?0:1)+r[count+2];
-        n/=2;
-        count ++;
+//     while(n != 0){
+//         r[count+2] = (n%2==0 ?0:1)+r[count+2];
+//         n/=2;
+//         count ++;
+//     }
+//     r[34] = count;
+//     int* x =  r;
+//     return x;
+// }
+
+__host__ __device__ int* toBinary(int n, int* r) {
+    int count = 0;
+    for (int i = 0; i < 35; i++) r[i] = 0;  // Initialize the array
+    while (n != 0) {
+        r[count + 2] = (n % 2 == 0 ? 0 : 1);
+        n /= 2;
+        count++;
     }
     r[34] = count;
-    int* x =  r;
-    return x;
+    return r;
 }
+
 
 
 __host__ __device__ double log2v2(int n){
@@ -148,7 +161,7 @@ __host__ __device__ int SEC(int* P){
 
 
 
-__host__ __device__ int* flipfloep (uint8_t N1, uint8_t N2, uint8_t P){
+__host__ __device__ int* flipfloep (uint8_t N1, uint8_t N2, uint8_t P, int* res_str){
     //bepalen welke hoogste is (N1 of N2) voor door te sturen naar ABC
     //-> hier delta al berekenen, maar 1 getal meegeven ipv 2
     int H, L;
@@ -166,13 +179,13 @@ __host__ __device__ int* flipfloep (uint8_t N1, uint8_t N2, uint8_t P){
         delta = 255;
     }
     int result;
-    int res_str[35];
+    // int res_str[35];
     //array maken van 33 -> int is max 32 groot, 33ste getal wordt gebruikt om bitlengte in te steken -> zo bij uitlezen weet men welke van de eerste X bits men moet uitlezen
     //1ste 2 bits van de array overlaten om dat dit dan de prefix wordt 0->00 voor de makkelijkheid
     if(P < H && P > L){
             int x = P-L;
             result = ABC(&delta, &x);
-            *res_str = *toBinary(result);
+            toBinary(result, res_str);
             //res_str = bitset<8>(result);
             res_str[0] = 0;
             res_str[1] = 0;
@@ -181,7 +194,7 @@ __host__ __device__ int* flipfloep (uint8_t N1, uint8_t N2, uint8_t P){
     else if(P < L ){
             int x = L-P;
             result = SEC(&x);
-            *res_str = *toBinary(result);
+            toBinary(result, res_str);
             //res_str = bitset<8>(result);
             res_str[0] = 1;
             res_str[1] = 0;
@@ -189,7 +202,7 @@ __host__ __device__ int* flipfloep (uint8_t N1, uint8_t N2, uint8_t P){
     else {
             int x = P-H;
             result = SEC(&x);
-            *res_str = *toBinary(result);
+            toBinary(result, res_str);
             //res_str = bitset<8>(result);
             res_str[0] = 1;
             res_str[1] = 1;
@@ -219,9 +232,15 @@ __global__ void felics(uint8_t *image_array, int *output_array){
             output_array[i] = image_array[i];
         }
         else{
-             output_array[i] =  *flipfloep(image_array[i-2*stride], image_array[i-stride], image_array[i]);
-    
+            int res_str[35];
+            int* res = flipfloep(image_array[i-2*stride], image_array[i-stride], image_array[i], res_str);
+            // output_array[i] =  *flipfloep(image_array[i-2*stride], image_array[i-stride], image_array[i]);
+            for (int j = 0; j<35; j++){
+                output_array[i*35 + j] = 5;//res[j];
+            }
+
         }
+        // output_array[i] = 5;
     }
 }
 
@@ -232,7 +251,7 @@ __global__ void felics(uint8_t *image_array, int *output_array){
 int main (void){
     uint8_t* image_array = get_image_array();
 
-    int* output_array = (int*)malloc(width*height*(sizeof(int)+3));
+    int* output_array = (int*)malloc(width*height*35*(sizeof(int)));
 
 
 
@@ -241,33 +260,41 @@ int main (void){
     cudaMemcpy(d_image_array,image_array,width*height*sizeof(uint8_t),cudaMemcpyHostToDevice);
 
     int *d_output_array;
-    cudaMalloc(&d_output_array,width*height*(sizeof(int)+3));
+    cudaMalloc(&d_output_array,width*height*35*(sizeof(int)));
 
     const auto start = std::chrono::high_resolution_clock::now();
     felics<<<gridSize,blockSize>>>(d_image_array,d_output_array);
-    cudaMemcpy(output_array,d_output_array,width*height*(sizeof(int)+3),cudaMemcpyDeviceToHost);
-    
+    cudaMemcpy(&output_array,d_output_array,width*height*35*(sizeof(int)),cudaMemcpyDeviceToHost);
+    cudaDeviceSynchronize();
+    const auto end = std::chrono::high_resolution_clock::now();
+
+
     string s;
     for (int i = 0; i < width*height; i++){
         if (i%width ==0 || i%width ==1){
-            std::cout << "onveranderde pixel " << output_array[i] << i << std::endl;
+            std::cout << "onveranderde pixel " << output_array[i*35] << " " << i << std::endl;
             
         }
         else{
             s = "";
-            for (int j = 0; j < output_array[i+32]; j++){
-                s = s + to_string(output_array[i+j]);
+            for (int j = 0; j < 35; j++){
+                // s = s + to_string(output_array[i+j]);
+                // std::cout << output_array[i] << std::endl;
+                s += to_string(output_array[i*35 + j]);
             }
-            i += 30;
-        std::cout << s << std::endl;
-            
+
+            std::cout << s << " " << i << std::endl;
+            // std::cout << output_array[i] << std::endl;
+        // i += 30;
         }
         
     }
    
    cudaFree(d_image_array);
    cudaFree(d_output_array);
-   const auto end = std::chrono::high_resolution_clock::now();
+   free(image_array);
+   free(output_array);
+
 
     return 0;
 }
